@@ -40,5 +40,54 @@ namespace StrideLedger.Controllers
         {
             return await _context.Shoes.ToListAsync();
         }
+
+        [HttpPut("{id}")]
+        public async Task<IActionResult> UpdateShoe(int id, Shoe updatedShoe)
+        {
+            if (id != updatedShoe.ShoeId)
+            {
+                return BadRequest("Shoe ID mismatch");
+            }
+
+            _context.Entry(updatedShoe).State = EntityState.Modified;
+
+            try
+            {
+                await _context.SaveChangesAsync();
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                if (!ShoeExists(id))
+                {
+                    return NotFound();
+                }
+                else
+                {
+                    throw;
+                }
+            }
+            return NoContent();
+        }
+
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> DeleteShoe(int id)
+        {
+            var shoe = await _context.Shoes.FindAsync(id);
+
+            if (shoe == null)
+            {
+                return NotFound();
+            }
+
+            _context.Shoes.Remove(shoe);
+
+            await _context.SaveChangesAsync();
+            return NoContent();
+        }
+
+        private bool ShoeExists(int id)
+        {
+            return _context.Shoes.Any(e => e.ShoeId == id);
+        }
     }
 }
