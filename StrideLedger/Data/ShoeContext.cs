@@ -1,9 +1,10 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using StrideLedger.Models;
 
 namespace StrideLedger.Data
 {
-    public class ShoeContext : DbContext
+    public class ShoeContext : IdentityDbContext
     {
         public ShoeContext(DbContextOptions<ShoeContext> options) : base(options) { }
 
