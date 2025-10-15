@@ -28,9 +28,56 @@ namespace StrideLedger.Controllers
             var result = await _userManager.CreateAsync(user, model.Password);
             if (result.Succeeded)
             {
-                return Ok("User registered successfully");
+                // Auto-login: generate JWT token
+                var claims = new[]
+                {
+                    new Claim(JwtRegisteredClaimNames.Sub, user.Email),
+                    new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
+                };
+
+                var secretKey = Environment.GetEnvironmentVariable("JWT_SECRET_KEY");
+                var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey));
+                var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+                var token = new JwtSecurityToken(
+                    issuer: "StrideLedger",
+                    audience: "StrideLedgerUsers",
+                    claims: claims,
+                    expires: DateTime.Now.AddHours(1),
+                    signingCredentials: creds
+                );
+                var jwt = new JwtSecurityTokenHandler().WriteToken(token);
+
+                return StatusCode(201, new
+                {
+                    token = jwt,
+                    message = "User registered and logged in"
+                });
             }
-            return BadRequest(result.Errors);
+
+            // Error envelope
+            var errorEnvelope = new
+            {
+                success = false,
+                error = "Registration failed",
+                fields = new Dictionary<string, string>()
+            };
+
+            foreach (var err in result.Errors)
+            {
+                if (err.Code == "DuplicateUserName")
+                {
+                    errorEnvelope = new
+                    {
+                        success = false,
+                        error = "Email already in use",
+                        fields = new Dictionary<string, string> { { "email", "already in use" } }
+                    };
+                    break;
+                }
+                // Add other field errors as needed
+            }
+
+            return BadRequest(errorEnvelope);
         }
 
         [HttpPost("login")]
@@ -58,7 +105,11 @@ namespace StrideLedger.Controllers
                 );
                 return Ok(new { token = new JwtSecurityTokenHandler().WriteToken(token) });
             }
-            return Unauthorized();
+            return Unauthorized(new
+            {
+                success = false,
+                error = "Invalid email or password"
+            });
         }
     }
 }
