@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using StrideLedger.Data;
@@ -11,9 +12,11 @@ using StrideLedger.Data;
 namespace StrideLedger.Migrations
 {
     [DbContext(typeof(ShoeContext))]
-    partial class ShoeContextModelSnapshot : ModelSnapshot
+    [Migration("20251017212225_CapturePendingModelChanges")]
+    partial class CapturePendingModelChanges
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
