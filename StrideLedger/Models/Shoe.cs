@@ -1,10 +1,13 @@
 ﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 using System.Text.RegularExpressions;
 
 namespace StrideLedger.Models
 {
     public class Shoe : IValidatableObject
     {
+        [Key]
+        [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
         public int ShoeId { get; set; }
 
         [Required(ErrorMessage = "Name is required.")]
@@ -28,6 +31,10 @@ namespace StrideLedger.Models
 
         [Range(0, double.MaxValue, ErrorMessage = "CurrentMileage cannot be negative.")]
         public double CurrentMileage { get; set; } = 0;
+
+        // OwnerId associates this Shoe with a particular user (Identity user id)
+        [Required]
+        public string OwnerId { get; set; } = null!;
 
         // Computed property for RemainingMileage
         public double RemainingMileage

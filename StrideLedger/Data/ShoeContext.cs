@@ -8,8 +8,11 @@ namespace StrideLedger.Data
     {
         public ShoeContext(DbContextOptions<ShoeContext> options) : base(options) { }
 
-        public DbSet<Shoe> Shoes => Set<Shoe>();
-        public DbSet<Run> Runs => Set<Run>();
+        public DbSet<Shoe> Shoes { get; set; }
+        public DbSet<Run> Runs { get; set; }
+
+        // New table for refresh tokens
+        public DbSet<RefreshToken> RefreshTokens { get; set; }
     }
 }
 

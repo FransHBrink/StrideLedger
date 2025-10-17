@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using StrideLedger.Data;
 using StrideLedger.Models;
+using System.Security.Claims;
 
 namespace StrideLedger.Controllers
 {
@@ -18,9 +19,19 @@ namespace StrideLedger.Controllers
             _context = context;
         }
 
-        [HttpPost]
-        public async Task<ActionResult<Shoe>> CreateShoe(Shoe shoe)
+        private string GetCurrentUserId()
         {
+            return User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                   ?? User.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value
+                   ?? throw new UnauthorizedAccessException("User identifier not found in token.");
+        }
+
+        [HttpPost]
+        public async Task<ActionResult<Shoe>> CreateShoe([FromBody] Shoe shoe)
+        {
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+
+            shoe.OwnerId = GetCurrentUserId();
             _context.Shoes.Add(shoe);
             await _context.SaveChangesAsync();
             return CreatedAtAction(nameof(GetShoe), new { id = shoe.ShoeId }, shoe);
@@ -30,28 +41,38 @@ namespace StrideLedger.Controllers
         public async Task<ActionResult<Shoe>> GetShoe(int id)
         {
             var shoe = await _context.Shoes.FindAsync(id);
-            if (shoe == null)
-            {
-                return NotFound();
-            }
+            if (shoe == null) return NotFound();
+            if (shoe.OwnerId != GetCurrentUserId()) return Forbid();
             return shoe;
         }
 
         [HttpGet]
         public async Task<ActionResult<IEnumerable<Shoe>>> GetAllShoes()
         {
-            return await _context.Shoes.ToListAsync();
+            var userId = GetCurrentUserId();
+            return await _context.Shoes.Where(s => s.OwnerId == userId).ToListAsync();
         }
 
         [HttpPut("{id}")]
-        public async Task<IActionResult> UpdateShoe(int id, Shoe updatedShoe)
+        public async Task<IActionResult> UpdateShoe(int id, [FromBody] Shoe updatedShoe)
         {
             if (id != updatedShoe.ShoeId)
             {
                 return BadRequest("Shoe ID mismatch");
             }
 
-            _context.Entry(updatedShoe).State = EntityState.Modified;
+            var existing = await _context.Shoes.FindAsync(id);
+            if (existing == null) return NotFound();
+            if (existing.OwnerId != GetCurrentUserId()) return Forbid();
+
+            existing.Name = updatedShoe.Name;
+            existing.Description = updatedShoe.Description;
+            existing.Brand = updatedShoe.Brand;
+            existing.Model = updatedShoe.Model;
+            existing.TargetMileage = updatedShoe.TargetMileage;
+            existing.CurrentMileage = updatedShoe.CurrentMileage;
+
+            _context.Entry(existing).State = EntityState.Modified;
 
             try
             {
@@ -59,7 +80,7 @@ namespace StrideLedger.Controllers
             }
             catch (DbUpdateConcurrencyException)
             {
-                if (!ShoeExists(id))
+                if (!_context.Shoes.Any(e => e.ShoeId == id))
                 {
                     return NotFound();
                 }
@@ -76,20 +97,12 @@ namespace StrideLedger.Controllers
         {
             var shoe = await _context.Shoes.FindAsync(id);
 
-            if (shoe == null)
-            {
-                return NotFound();
-            }
+            if (shoe == null) return NotFound();
+            if (shoe.OwnerId != GetCurrentUserId()) return Forbid();
 
             _context.Shoes.Remove(shoe);
-
             await _context.SaveChangesAsync();
             return NoContent();
-        }
-
-        private bool ShoeExists(int id)
-        {
-            return _context.Shoes.Any(e => e.ShoeId == id);
         }
     }
 }

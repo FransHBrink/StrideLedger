@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using StrideLedger.Data;
 using StrideLedger.Models;
+using StrideLedger.Models.Dtos;
+using System.Security.Claims;
 
 namespace StrideLedger.Controllers
 {
@@ -18,23 +20,35 @@ namespace StrideLedger.Controllers
             _context = context;
         }
 
-        [HttpPost]
-        public async Task<ActionResult<Run>> CreateRun([FromBody] Run run)
+        private string GetCurrentUserId()
         {
-            // Validate the ShoeId exists
-            var shoe = await _context.Shoes.FindAsync(run.ShoeId);
-            if (shoe == null) return BadRequest("Shoe not found");
+            return User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                   ?? User.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value
+                   ?? throw new UnauthorizedAccessException("User identifier not found in token.");
+        }
 
-            // Update the shoe's mileage
+        [HttpPost]
+        public async Task<ActionResult<Run>> CreateRun([FromBody] CreateRun createDto)
+        {
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+
+            var shoe = await _context.Shoes.FindAsync(createDto.ShoeId);
+            if (shoe == null) return BadRequest("Shoe not found");
+            if (shoe.OwnerId != GetCurrentUserId()) return Forbid();
+
+            double distanceMile = createDto.DistanceMile ?? (createDto.DistanceKm * 0.621371);
+
+            var run = new Run
+            {
+                ShoeId = createDto.ShoeId,
+                Date = createDto.Date,
+                DistanceKm = createDto.DistanceKm,
+                DistanceMile = distanceMile
+            };
+
             shoe.CurrentMileage += run.DistanceKm;
 
-            // Remove the Shoe object from the run (avoid EF tracking conflicts)
-            run.Shoe = null!; 
-
-            // Add the run
             _context.Runs.Add(run);
-
-            // Save changes (EF will track both Run and update the existing Shoe)
             await _context.SaveChangesAsync();
 
             return CreatedAtAction(nameof(GetRun), new { id = run.RunId }, run);
@@ -45,13 +59,18 @@ namespace StrideLedger.Controllers
         {
             var run = await _context.Runs.Include(r => r.Shoe).FirstOrDefaultAsync(r => r.RunId == id);
             if (run == null) return NotFound();
+            if (run.Shoe == null || run.Shoe.OwnerId != GetCurrentUserId()) return Forbid();
             return run;
         }
 
         [HttpGet]
         public async Task<ActionResult<IEnumerable<Run>>> GetAllRuns()
         {
-            return await _context.Runs.Include(r => r.Shoe).ToListAsync();
+            var userId = GetCurrentUserId();
+            return await _context.Runs
+                                 .Include(r => r.Shoe)
+                                 .Where(r => r.Shoe != null && r.Shoe.OwnerId == userId)
+                                 .ToListAsync();
         }
 
         [HttpPut("{id}")]
@@ -59,19 +78,30 @@ namespace StrideLedger.Controllers
         {
             if (id != updatedRun.RunId) return BadRequest("Run ID mismatch");
 
-            var existingRun = await _context.Runs.FindAsync(id);
-
+            var existingRun = await _context.Runs.Include(r => r.Shoe).FirstOrDefaultAsync(r => r.RunId == id);
             if (existingRun == null) return NotFound("Run not found");
+            if (existingRun.Shoe == null || existingRun.Shoe.OwnerId != GetCurrentUserId()) return Forbid();
 
-            // Validate the ShoeId exists
-            var shoe = await _context.Shoes.FindAsync(updatedRun.ShoeId);
-            if (shoe == null) return BadRequest("Shoe not found");
+            var newShoe = await _context.Shoes.FindAsync(updatedRun.ShoeId);
+            if (newShoe == null) return BadRequest("Shoe not found");
+            if (newShoe.OwnerId != GetCurrentUserId()) return Forbid();
 
-            // Adjust the shoe's mileage based on the difference
             double mileageDifference = updatedRun.DistanceKm - existingRun.DistanceKm;
-            shoe.CurrentMileage += mileageDifference;
+            if (existingRun.ShoeId != updatedRun.ShoeId)
+            {
+                var oldShoe = existingRun.Shoe;
+                if (oldShoe != null)
+                {
+                    oldShoe.CurrentMileage -= existingRun.DistanceKm;
+                    if (oldShoe.CurrentMileage < 0) oldShoe.CurrentMileage = 0;
+                }
+                newShoe.CurrentMileage += updatedRun.DistanceKm;
+            }
+            else
+            {
+                newShoe.CurrentMileage += mileageDifference;
+            }
 
-            // Update the run details
             existingRun.Date = updatedRun.Date;
             existingRun.DistanceKm = updatedRun.DistanceKm;
             existingRun.ShoeId = updatedRun.ShoeId;
@@ -85,20 +115,16 @@ namespace StrideLedger.Controllers
         public async Task<IActionResult> DeleteRun(int id)
         {
             var run = await _context.Runs.FindAsync(id);
-
             if (run == null) return NotFound("Run not found");
 
-            // Adjust the shoe's mileage
             var shoe = await _context.Shoes.FindAsync(run.ShoeId);
+            if (shoe == null) return BadRequest("Shoe not found");
+            if (shoe.OwnerId != GetCurrentUserId()) return Forbid();
 
-            if (shoe != null)
-            {
-                shoe.CurrentMileage -= run.DistanceKm;
-                if (shoe.CurrentMileage < 0) shoe.CurrentMileage = 0; // Prevent negative mileage
-            }
+            shoe.CurrentMileage -= run.DistanceKm;
+            if (shoe.CurrentMileage < 0) shoe.CurrentMileage = 0;
 
             _context.Runs.Remove(run);
-
             await _context.SaveChangesAsync();
             return NoContent();
         }

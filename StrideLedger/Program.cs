@@ -57,6 +57,13 @@ app.UseCors("DevCorsPolicy");
 app.UseAuthentication();
 app.UseAuthorization();
 
+// Apply pending migrations at startup (convenient for dev)
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<ShoeContext>();
+    db.Database.Migrate();
+}
+
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
